@@ -1,6 +1,6 @@
-module sui_m::continuous_indexing {
+module portal::continuous_indexing {
     use sui::event;
-    use sui_m::continuous_indexing_math::{
+    use portal::continuous_indexing_math::{
         divide_down,
         divide_up,
         multiply_down,

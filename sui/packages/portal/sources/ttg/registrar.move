@@ -1,4 +1,4 @@
-module sui_m::registrar {
+module portal::registrar {
     use sui::table::{Self, Table};
     use sui::hash;
     use sui::bcs;

@@ -1,9 +1,9 @@
-module sui_m::m_token {
+module portal::m_token {
     use sui::coin::{Self, TreasuryCap, Coin};
     use sui::table::{Self, Table};
     use sui::event;
-    use sui_m::continuous_indexing::{Self, ContinuousIndexing};
-    use sui_m::continuous_indexing_math::{divide_down, divide_up, multiply_down};
+    use portal::continuous_indexing::{Self, ContinuousIndexing};
+    use portal::continuous_indexing_math::{divide_down, divide_up, multiply_down};
 
     // ============ Constants ============
 

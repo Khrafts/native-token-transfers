@@ -1,4 +1,4 @@
-module sui_m::continuous_indexing_math {
+module portal::continuous_indexing_math {
     // ============ Constants ============
 
     /// The scaling of rates for exponent math

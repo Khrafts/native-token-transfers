@@ -2,7 +2,7 @@
 
 [move]
 version = 3
-manifest_digest = "9AAA65DA02B8BF154645DE42487B5966FBDD8AA9670719422F065DFCAC365AFB"
+manifest_digest = "131D0E66EB96E94BE2BB4F30B3D82B3216DEBA853D99821B3E075A9F6B7759AF"
 deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
 dependencies = [
   { id = "Bridge", name = "Bridge" },
@@ -50,8 +50,3 @@ source = { git = "https://github.com/wormhole-foundation/wormhole.git", rev = "s
 dependencies = [
   { id = "Sui", name = "Sui" },
 ]
-
-[move.toolchain-version]
-compiler-version = "1.55.0"
-edition = "2024.beta"
-flavor = "sui"

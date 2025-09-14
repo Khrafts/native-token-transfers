@@ -5,7 +5,7 @@
 /// - Key transfers (M0KT) 
 /// - List updates (M0LU)
 /// - Token transfers (handled by NTT)
-module sui_m::portal_payload_encoder {
+module portal::payload_encoder {
     use sui::address;
     
     // Error constants
