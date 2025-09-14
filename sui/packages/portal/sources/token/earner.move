@@ -2,17 +2,9 @@ module portal::earner {
     use sui::table::{Self, Table};
     use sui::event;
     use portal::continuous_indexing::{Self, ContinuousIndexing};
-    use portal::continuous_indexing_math::{divide_down, divide_up, multiply_down};
-
-    // ============ Constants ============
-
-    /// The scaling of rates for exponent math
-    const EXP_SCALED_ONE: u128 = 1_000_000_000_000; // 1e12
+    use portal::continuous_indexing_math::{divide_up, multiply_down};
 
     // ============ Error Codes ============
-
-    /// Error when the index from the Hub chain has not yet been propagated
-    const EIndexNotInitialized: u64 = 1;
 
     /// Error when there is insufficient balance
     const EInsufficientBalance: u64 = 2;
@@ -22,15 +14,6 @@ module portal::earner {
 
     /// Error when calling startEarning for a non-approved earner
     const ENotApprovedEarner: u64 = 4;
-
-    /// Error when principal of total supply would overflow
-    const EOverflowsPrincipalOfTotalSupply: u64 = 6;
-
-    /// Error when amount is zero
-    const EInsufficientAmount: u64 = 9;
-
-    /// Error when recipient is invalid
-    const EInvalidRecipient: u64 = 10;
 
     /// Error when account balance not found
     const EAccountNotFound: u64 = 11;
@@ -76,12 +59,6 @@ module portal::earner {
     }
 
     // ============ Events ============
-
-    public struct Transfer has copy, drop {
-        from: address,
-        to: address,
-        value: u256
-    }
 
     public struct StartEarning has copy, drop {
         account: address

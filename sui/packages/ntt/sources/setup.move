@@ -9,9 +9,8 @@ module ntt::setup {
     use ntt::mode::{Mode, Self};
 
     // M Token imports
-    use portal::m_token::{Self, M_TOKEN};
-    use portal::earner::{Self, EarnerGlobal, EarnerCap};
-    use portal::registrar::{Self, RegistrarGlobal, PortalCap as RegistrarPortalCap};
+    use portal::earner::{EarnerGlobal, EarnerCap};
+    use portal::registrar::{RegistrarGlobal, PortalCap as RegistrarPortalCap};
 
     /// Capability created at `init`, which will be destroyed once
     /// `complete` is called. This ensures only the deployer can
