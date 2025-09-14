@@ -81,10 +81,6 @@ module portal::registrar {
         }
     }
 
-    /// Create portal capability for NTT integration
-    public fun create_portal_cap(ctx: &mut TxContext): PortalCap {
-        PortalCap { id: object::new(ctx) }
-    }
 
     // ============ Portal Functions ============
 

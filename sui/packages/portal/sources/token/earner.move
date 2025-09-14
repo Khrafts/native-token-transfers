@@ -98,9 +98,20 @@ module portal::earner {
 
     // ============ Init ============
 
-    fun init(_ctx: &mut TxContext) {
-        // This will be called when setting up the earner
-        // For now, we'll create the global state in a separate setup function
+    fun init(ctx: &mut TxContext) {
+        // Create and transfer capabilities to the deployer
+        // These will be used to set up NTT integration
+        let earner_cap_for_ntt = EarnerCap {
+            id: object::new(ctx)
+        };
+
+        let earner_cap_for_claims = EarnerCap {
+            id: object::new(ctx)
+        };
+
+        // Transfer both caps to deployer
+        transfer::public_transfer(earner_cap_for_ntt, tx_context::sender(ctx));
+        transfer::public_transfer(earner_cap_for_claims, tx_context::sender(ctx));
     }
 
     // ============ Public Functions ============
@@ -109,8 +120,8 @@ module portal::earner {
     public fun create_earner_global(
         registrar: address,
         ctx: &mut TxContext
-    ): (EarnerGlobal, EarnerCap) {
-        let earner_global = EarnerGlobal {
+    ): EarnerGlobal {
+        EarnerGlobal {
             id: object::new(ctx),
             indexing: continuous_indexing::new(ctx),
             registrar,
@@ -119,21 +130,9 @@ module portal::earner {
             total_earning_supply: 0,
             balances: table::new(ctx),
             approved_earners: table::new(ctx)
-        };
-
-        let earner_cap = EarnerCap {
-            id: object::new(ctx)
-        };
-
-        (earner_global, earner_cap)
-    }
-
-    /// Create additional earner capability (for claims account)
-    public fun create_earner_cap(ctx: &mut TxContext): EarnerCap {
-        EarnerCap {
-            id: object::new(ctx)
         }
     }
+
 
     /// Update the current index (called from NTT when processing M0IT payloads)
     public fun update_index(

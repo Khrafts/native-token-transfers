@@ -8,6 +8,11 @@ module ntt::setup {
     use ntt::state;
     use ntt::mode::{Mode, Self};
 
+    // M Token imports
+    use portal::m_token::{Self, M_TOKEN};
+    use portal::earner::{Self, EarnerGlobal, EarnerCap};
+    use portal::registrar::{Self, RegistrarGlobal, PortalCap as RegistrarPortalCap};
+
     /// Capability created at `init`, which will be destroyed once
     /// `complete` is called. This ensures only the deployer can
     /// create the shared `State`.
@@ -88,5 +93,27 @@ module ntt::setup {
 
         transfer::public_share_object(state);
         (admin_cap, upgrade_cap)
+    }
+
+    // ============ M Token Setup Functions ============
+
+    /// Set M Token portal objects on existing NTT State
+    /// This transfers ownership of M Token globals and capabilities to NTT State
+    /// The portal objects should be created when publishing the portal package
+    public fun set_m_token_portal_objects<CoinType>(
+        state: &mut state::State<CoinType>,
+        earner_global: EarnerGlobal,
+        registrar_global: RegistrarGlobal,
+        earner_cap: EarnerCap,
+        registrar_cap: RegistrarPortalCap
+    ) {
+        // Transfer ownership of M Token globals to NTT state
+        state::set_m_token_globals(
+            state,
+            earner_global,
+            registrar_global,
+            earner_cap,
+            registrar_cap
+        );
     }
 }
