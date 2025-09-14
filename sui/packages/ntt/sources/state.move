@@ -15,7 +15,7 @@ module ntt::state {
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
 
     // Portal imports for M Token integration
-    use portal::m_token::{MTokenGlobal, PortalCap as MTokenPortalCap};
+    use portal::earner::{EarnerGlobal, EarnerCap};
     use portal::registrar::{RegistrarGlobal, PortalCap as RegistrarPortalCap};
 
     #[error]
@@ -55,9 +55,9 @@ module ntt::state {
         upgrade_cap_id: ID,
 
         // M Token extensions (owned objects)
-        m_token_global: Option<MTokenGlobal>,
+        earner_global: Option<EarnerGlobal>,
         registrar_global: Option<RegistrarGlobal>,
-        m_token_cap: Option<MTokenPortalCap>,
+        earner_cap: Option<EarnerCap>,
         registrar_cap: Option<RegistrarPortalCap>,
     }
 
@@ -93,9 +93,9 @@ module ntt::state {
             upgrade_cap_id,
 
             // Initialize M Token fields as None
-            m_token_global: option::none(),
+            earner_global: option::none(),
             registrar_global: option::none(),
-            m_token_cap: option::none(),
+            earner_cap: option::none(),
             registrar_cap: option::none(),
         };
 
@@ -383,38 +383,38 @@ module ntt::state {
 
     /// Check if this is an M Token NTT
     public fun has_m_token_globals<T>(state: &State<T>): bool {
-        option::is_some(&state.m_token_global)
+        option::is_some(&state.earner_global)
     }
 
     /// Set M Token globals (called during setup)
     public(package) fun set_m_token_globals<T>(
         state: &mut State<T>,
-        m_token_global: MTokenGlobal,
+        earner_global: EarnerGlobal,
         registrar_global: RegistrarGlobal,
-        m_token_cap: MTokenPortalCap,
+        earner_cap: EarnerCap,
         registrar_cap: RegistrarPortalCap,
     ) {
-        option::fill(&mut state.m_token_global, m_token_global);
+        option::fill(&mut state.earner_global, earner_global);
         option::fill(&mut state.registrar_global, registrar_global);
-        option::fill(&mut state.m_token_cap, m_token_cap);
+        option::fill(&mut state.earner_cap, earner_cap);
         option::fill(&mut state.registrar_cap, registrar_cap);
     }
 
     /// Accessor functions for internal use
-    public(package) fun borrow_m_token_global<T>(state: &State<T>): &MTokenGlobal {
-        option::borrow(&state.m_token_global)
+    public(package) fun borrow_earner_global<T>(state: &State<T>): &EarnerGlobal {
+        option::borrow(&state.earner_global)
     }
 
-    public(package) fun borrow_m_token_global_mut<T>(state: &mut State<T>): &mut MTokenGlobal {
-        option::borrow_mut(&mut state.m_token_global)
+    public(package) fun borrow_earner_global_mut<T>(state: &mut State<T>): &mut EarnerGlobal {
+        option::borrow_mut(&mut state.earner_global)
     }
 
     public(package) fun borrow_registrar_global_mut<T>(state: &mut State<T>): &mut RegistrarGlobal {
         option::borrow_mut(&mut state.registrar_global)
     }
 
-    public(package) fun borrow_m_token_cap<T>(state: &State<T>): &MTokenPortalCap {
-        option::borrow(&state.m_token_cap)
+    public(package) fun borrow_earner_cap<T>(state: &State<T>): &EarnerCap {
+        option::borrow(&state.earner_cap)
     }
 
     public(package) fun borrow_registrar_cap<T>(state: &State<T>): &RegistrarPortalCap {
@@ -430,10 +430,10 @@ module ntt::state {
         index: u128,
         ctx: &mut TxContext
     ) {
-        let m_token_global = option::borrow_mut(&mut state.m_token_global);
-        let m_token_cap = option::borrow(&state.m_token_cap);
+        let earner_global = option::borrow_mut(&mut state.earner_global);
+        let earner_cap = option::borrow(&state.earner_cap);
 
-        portal::m_token::update_index(m_token_global, m_token_cap, index, ctx);
+        portal::earner::update_index(earner_global, earner_cap, index, ctx);
     }
 
     /// Set registrar key atomically
@@ -474,8 +474,8 @@ module ntt::state {
 
     /// Get current M Token index
     public(package) fun get_m_token_current_index<T>(state: &State<T>): u128 {
-        let m_token_global = option::borrow(&state.m_token_global);
-        portal::m_token::current_index(m_token_global)
+        let earner_global = option::borrow(&state.earner_global);
+        portal::earner::current_index(earner_global)
     }
 
     /// Mint M Tokens with index update atomically
@@ -486,19 +486,20 @@ module ntt::state {
         index: u128,
         ctx: &mut TxContext
     ) {
-        let m_token_global = option::borrow_mut(&mut state.m_token_global);
-        let m_token_cap = option::borrow(&state.m_token_cap);
+        // Get caps first (immutable borrow)
+        let earner_cap = option::borrow(&state.earner_cap);
+
+        // Then get mutable references
+        let earner_global = option::borrow_mut(&mut state.earner_global);
         let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
 
-        portal::m_token::mint(
-            m_token_global,
-            treasury_cap,
-            m_token_cap,
-            recipient,
-            amount,
-            index,
-            ctx
-        );
+        // Update the index and add balance tracking
+        portal::earner::update_index(earner_global, earner_cap, index, ctx);
+        portal::earner::add_account_balance(earner_global, earner_cap, recipient, amount, ctx);
+
+        // Finally mint the actual coins
+        let coins = sui::coin::mint(treasury_cap, (amount as u64), ctx);
+        transfer::public_transfer(coins, recipient);
     }
 
     /// Mint M Tokens without index update atomically
@@ -508,17 +509,18 @@ module ntt::state {
         amount: u256,
         ctx: &mut TxContext
     ) {
-        let m_token_global = option::borrow_mut(&mut state.m_token_global);
-        let m_token_cap = option::borrow(&state.m_token_cap);
+        // Get caps first (immutable borrow)
+        let earner_cap = option::borrow(&state.earner_cap);
+
+        // Then get mutable references
+        let earner_global = option::borrow_mut(&mut state.earner_global);
         let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
 
-        portal::m_token::mint_no_index(
-            m_token_global,
-            treasury_cap,
-            m_token_cap,
-            recipient,
-            amount,
-            ctx
-        );
+        // Add balance tracking (no index update)
+        portal::earner::add_account_balance(earner_global, earner_cap, recipient, amount, ctx);
+
+        // Finally mint the actual coins
+        let coins = sui::coin::mint(treasury_cap, (amount as u64), ctx);
+        transfer::public_transfer(coins, recipient);
     }
 }
