@@ -591,3 +591,27 @@ module ntt::ntt {
    - PTBs use same function calls, M Token logic happens transparently
 
 This architecture provides complete M Token functionality while maintaining perfect compatibility with existing NTT interfaces and PTBs.
+
+## Key Insights from EVM Portal Analysis
+
+### Hub-Spoke Architecture Understanding
+- **Ethereum Hub Portal**: Uses `LOCKING` mode, locks M tokens and sends `NativeTokenTransfer` messages
+- **Sui Spoke Portal**: Uses `BURNING` mode, burns/mints M tokens based on Hub messages
+- **Custom Payloads**: Three types beyond standard transfers:
+  1. `M0IT` (Index Transfer): Updates M token index on remote chains
+  2. `M0KT` (Key Transfer): Propagates Registrar keys to remote chains
+  3. `M0LU` (List Update): Updates Registrar lists on remote chains
+
+### EVM Portal Pattern Replication
+The EVM Portal design extends NTTManager by:
+1. **Inheriting from NttManagerNoRateLimiting**: Gets all standard NTT functionality
+2. **Overriding `_handleMsg`**: Detects payload type and routes to appropriate handler
+3. **Custom payload handlers**: `_receiveCustomPayload()` processes M0IT/M0KT/M0LU messages
+4. **M Token operations**: `_mintOrUnlock()` and `_burnOrLock()` with index awareness
+
+### Sui Move Adaptation Strategy
+Since Sui doesn't support inheritance, we use **composition over inheritance**:
+1. **State Ownership**: NTT State owns M Token globals (MTokenGlobal, RegistrarGlobal)
+2. **Capability Pattern**: Portal capabilities enable protected operations
+3. **Internal Detection**: NTT functions detect M Token presence via optional fields
+4. **Zero Breaking Changes**: All existing NTT function signatures remain unchanged

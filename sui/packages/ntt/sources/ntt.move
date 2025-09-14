@@ -12,6 +12,9 @@ module ntt::ntt {
     use ntt_common::validated_transceiver_message::ValidatedTransceiverMessage;
     use ntt::upgrades::VersionGated;
 
+    // Portal imports for M Token integration
+    use portal::payload_encoder;
+
     #[error]
     const ETransferExceedsRateLimit: vector<u8>
         = b"Transfer exceeds rate limit";
@@ -250,19 +253,20 @@ module ntt::ntt {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // NOTE: payload handling must be done by modifying the implementation
-        // here. the default NTT implementation simply ignores the payload
-        let (recipient, coins, _payload) = release_impl(
-            state,
-            version_gated,
-            from_chain_id,
-            message,
-            coin_meta,
-            clock,
-            ctx
-        );
-
-        transfer::public_transfer(coins, recipient)
+        if (state.has_m_token_globals()) {
+            // M Token path - handle internally
+            release_m_token_internal(
+                state, version_gated, from_chain_id,
+                message, coin_meta, clock, ctx
+            );
+        } else {
+            // Standard NTT path (unchanged)
+            let (recipient, coins, _payload) = release_impl(
+                state, version_gated, from_chain_id,
+                message, coin_meta, clock, ctx
+            );
+            transfer::public_transfer(coins, recipient)
+        }
     }
 
     fun release_impl<CoinType>(
@@ -308,4 +312,102 @@ module ntt::ntt {
             coin::mint(state.borrow_treasury_cap_mut(), amount, ctx)
         }
     }
+
+    // ============ M Token Release Functions ============
+
+    /// Internal M Token release logic - processes custom payloads and M Token transfers
+    fun release_m_token_internal<CoinType>(
+        state: &mut State<CoinType>,
+        version_gated: VersionGated,
+        from_chain_id: u16,
+        message: NttManagerMessage<NativeTokenTransfer>,
+        coin_meta: &CoinMetadata<CoinType>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let (recipient, coins, payload) = release_impl(
+            state, version_gated, from_chain_id,
+            message, coin_meta, clock, ctx
+        );
+
+        // Process M Token payload
+        if (option::is_some(&payload)) {
+            let payload_bytes = option::destroy_some(payload);
+
+            // Check for custom M operations (M0IT/M0KT/M0LU)
+            if (process_m_custom_payload(state, payload_bytes, ctx)) {
+                // Custom operation handled, no token transfer
+                coin::destroy_zero(coins);
+                return
+            };
+
+            // Regular M Token transfer with index
+            let (index, _dest_token) = payload_encoder::decode_m_additional_payload(&payload_bytes);
+
+            // Destroy NTT coins and mint M Tokens with proper index
+            let amount = coin::value(&coins);
+            coin::destroy_zero(coins);
+
+            mint_m_token_with_index(state, recipient, amount, index, ctx);
+        } else {
+            // Standard token transfer without payload
+            transfer::public_transfer(coins, recipient)
+        }
+    }
+
+    /// Process custom M payload types for M Token (M0IT/M0KT/M0LU)
+    fun process_m_custom_payload<CoinType>(
+        state: &mut State<CoinType>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ): bool {
+        if (vector::length(&payload) < 4) return false;
+
+        let payload_type = payload_encoder::get_payload_type(&payload);
+
+        if (payload_encoder::is_index_payload(&payload_type)) {
+            // M0IT - Index Transfer
+            let (index, _chain_id) = payload_encoder::decode_index_payload(payload);
+            state.update_m_token_index(index, ctx);
+            true
+        } else if (payload_encoder::is_key_payload(&payload_type)) {
+            // M0KT - Key Transfer
+            let (key, value, _chain_id) = payload_encoder::decode_key_payload(payload);
+            state.set_registrar_key(key, value);
+            true
+        } else if (payload_encoder::is_list_payload(&payload_type)) {
+            // M0LU - List Update
+            let (list_name, account, add, _chain_id) =
+                payload_encoder::decode_list_update_payload(payload);
+
+            if (add) {
+                state.add_to_registrar_list(list_name, account);
+            } else {
+                state.remove_from_registrar_list(list_name, account);
+            };
+            true
+        } else {
+            false // Not a custom M payload
+        }
+    }
+
+    /// Mint M Tokens with index update using NTT's treasury cap
+    fun mint_m_token_with_index<CoinType>(
+        state: &mut State<CoinType>,
+        recipient: address,
+        amount: u64,
+        index: u128,
+        ctx: &mut TxContext
+    ) {
+        let current_index = state.get_m_token_current_index();
+
+        if (index > current_index) {
+            // Mint with index update
+            state.mint_m_token_with_index(recipient, (amount as u256), index, ctx);
+        } else {
+            // Mint without index update
+            state.mint_m_token_no_index(recipient, (amount as u256), ctx);
+        }
+    }
+
 }

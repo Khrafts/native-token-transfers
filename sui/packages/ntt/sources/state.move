@@ -14,6 +14,10 @@ module ntt::state {
     use ntt_common::native_token_transfer::NativeTokenTransfer;
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
 
+    // Portal imports for M Token integration
+    use portal::m_token::{MTokenGlobal, PortalCap as MTokenPortalCap};
+    use portal::registrar::{RegistrarGlobal, PortalCap as RegistrarPortalCap};
+
     #[error]
     const EZeroThreshold: vector<u8> =
         b"Threshold cannot be zero";
@@ -49,6 +53,12 @@ module ntt::state {
         // for off-chain discoverability
         admin_cap_id: ID,
         upgrade_cap_id: ID,
+
+        // M Token extensions (owned objects)
+        m_token_global: Option<MTokenGlobal>,
+        registrar_global: Option<RegistrarGlobal>,
+        m_token_cap: Option<MTokenPortalCap>,
+        registrar_cap: Option<RegistrarPortalCap>,
     }
 
     public(package) fun new<CoinType>(
@@ -81,6 +91,12 @@ module ntt::state {
             version: 0,
             admin_cap_id: admin_cap.id.to_inner(),
             upgrade_cap_id,
+
+            // Initialize M Token fields as None
+            m_token_global: option::none(),
+            registrar_global: option::none(),
+            m_token_cap: option::none(),
+            registrar_cap: option::none(),
         };
 
         (state, admin_cap)
@@ -361,5 +377,148 @@ module ntt::state {
         if (enabled_count > 0) {
             assert!(threshold > 0, EZeroThreshold);
         }
+    }
+
+    // ============ M Token State Management Functions ============
+
+    /// Check if this is an M Token NTT
+    public fun has_m_token_globals<T>(state: &State<T>): bool {
+        option::is_some(&state.m_token_global)
+    }
+
+    /// Set M Token globals (called during setup)
+    public(package) fun set_m_token_globals<T>(
+        state: &mut State<T>,
+        m_token_global: MTokenGlobal,
+        registrar_global: RegistrarGlobal,
+        m_token_cap: MTokenPortalCap,
+        registrar_cap: RegistrarPortalCap,
+    ) {
+        option::fill(&mut state.m_token_global, m_token_global);
+        option::fill(&mut state.registrar_global, registrar_global);
+        option::fill(&mut state.m_token_cap, m_token_cap);
+        option::fill(&mut state.registrar_cap, registrar_cap);
+    }
+
+    /// Accessor functions for internal use
+    public(package) fun borrow_m_token_global<T>(state: &State<T>): &MTokenGlobal {
+        option::borrow(&state.m_token_global)
+    }
+
+    public(package) fun borrow_m_token_global_mut<T>(state: &mut State<T>): &mut MTokenGlobal {
+        option::borrow_mut(&mut state.m_token_global)
+    }
+
+    public(package) fun borrow_registrar_global_mut<T>(state: &mut State<T>): &mut RegistrarGlobal {
+        option::borrow_mut(&mut state.registrar_global)
+    }
+
+    public(package) fun borrow_m_token_cap<T>(state: &State<T>): &MTokenPortalCap {
+        option::borrow(&state.m_token_cap)
+    }
+
+    public(package) fun borrow_registrar_cap<T>(state: &State<T>): &RegistrarPortalCap {
+        option::borrow(&state.registrar_cap)
+    }
+
+    // ============ M Token Atomic Operations ============
+    // These functions perform operations that require multiple borrows atomically
+
+    /// Update M Token index atomically
+    public(package) fun update_m_token_index<T>(
+        state: &mut State<T>,
+        index: u128,
+        ctx: &mut TxContext
+    ) {
+        let m_token_global = option::borrow_mut(&mut state.m_token_global);
+        let m_token_cap = option::borrow(&state.m_token_cap);
+
+        portal::m_token::update_index(m_token_global, m_token_cap, index, ctx);
+    }
+
+    /// Set registrar key atomically
+    public(package) fun set_registrar_key<T>(
+        state: &mut State<T>,
+        key: vector<u8>,
+        value: vector<u8>
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::set_key(registrar_global, registrar_cap, key, value);
+    }
+
+    /// Add to registrar list atomically
+    public(package) fun add_to_registrar_list<T>(
+        state: &mut State<T>,
+        list_name: vector<u8>,
+        account: address
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::add_to_list(registrar_global, registrar_cap, list_name, account);
+    }
+
+    /// Remove from registrar list atomically
+    public(package) fun remove_from_registrar_list<T>(
+        state: &mut State<T>,
+        list_name: vector<u8>,
+        account: address
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::remove_from_list(registrar_global, registrar_cap, list_name, account);
+    }
+
+    /// Get current M Token index
+    public(package) fun get_m_token_current_index<T>(state: &State<T>): u128 {
+        let m_token_global = option::borrow(&state.m_token_global);
+        portal::m_token::current_index(m_token_global)
+    }
+
+    /// Mint M Tokens with index update atomically
+    public(package) fun mint_m_token_with_index<T>(
+        state: &mut State<T>,
+        recipient: address,
+        amount: u256,
+        index: u128,
+        ctx: &mut TxContext
+    ) {
+        let m_token_global = option::borrow_mut(&mut state.m_token_global);
+        let m_token_cap = option::borrow(&state.m_token_cap);
+        let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
+
+        portal::m_token::mint(
+            m_token_global,
+            treasury_cap,
+            m_token_cap,
+            recipient,
+            amount,
+            index,
+            ctx
+        );
+    }
+
+    /// Mint M Tokens without index update atomically
+    public(package) fun mint_m_token_no_index<T>(
+        state: &mut State<T>,
+        recipient: address,
+        amount: u256,
+        ctx: &mut TxContext
+    ) {
+        let m_token_global = option::borrow_mut(&mut state.m_token_global);
+        let m_token_cap = option::borrow(&state.m_token_cap);
+        let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
+
+        portal::m_token::mint_no_index(
+            m_token_global,
+            treasury_cap,
+            m_token_cap,
+            recipient,
+            amount,
+            ctx
+        );
     }
 }

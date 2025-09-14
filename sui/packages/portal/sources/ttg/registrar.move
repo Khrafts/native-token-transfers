@@ -11,9 +11,9 @@ module portal::registrar {
 
     // ============ Structs ============
 
-    /// Registrar global state - shared object
+    /// Registrar global state - now owned by NTT State (hence has store ability)
     /// A book of record of arbitrary key-value pairs and lists
-    public struct RegistrarGlobal has key {
+    public struct RegistrarGlobal has key, store {
         id: UID,
         /// Portal address that can modify the registrar
         portal: address,
@@ -69,6 +69,21 @@ module portal::registrar {
 
         // Transfer portal capability to deployer (to be transferred to actual portal)
         transfer::transfer(portal_cap, deployer);
+    }
+
+    /// Create Registrar global for NTT integration
+    /// This is used instead of the standard init flow when integrating with NTT
+    public fun create_global(ctx: &mut TxContext): RegistrarGlobal {
+        RegistrarGlobal {
+            id: object::new(ctx),
+            portal: @0x0, // Will be set by NTT setup
+            values: table::new(ctx),
+        }
+    }
+
+    /// Create portal capability for NTT integration
+    public fun create_portal_cap(ctx: &mut TxContext): PortalCap {
+        PortalCap { id: object::new(ctx) }
     }
 
     // ============ Portal Functions ============

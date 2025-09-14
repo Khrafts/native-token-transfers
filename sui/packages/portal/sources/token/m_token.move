@@ -63,11 +63,9 @@ module portal::m_token {
         last_claim_index: u128
     }
 
-    /// Global MToken state - shared object
-    public struct MTokenGlobal has key {
+    /// Global MToken state - now owned by NTT State (hence has store ability)
+    public struct MTokenGlobal has key, store {
         id: UID,
-        /// Treasury capability for minting/burning
-        treasury_cap: TreasuryCap<M_TOKEN>,
         /// Continuous indexing state
         indexing: ContinuousIndexing,
         /// Portal address that can mint/burn
@@ -154,7 +152,6 @@ module portal::m_token {
         // Create the global state
         let global = MTokenGlobal {
             id: object::new(ctx),
-            treasury_cap,
             indexing,
             portal: deployer, // Will be updated to actual portal
             registrar: deployer, // Will be updated to actual registrar
@@ -178,15 +175,57 @@ module portal::m_token {
         transfer::transfer(portal_cap, deployer);
         transfer::transfer(registrar_cap, deployer);
 
+        // Store treasury_cap temporarily - will be handled by new setup pattern
+        transfer::public_transfer(treasury_cap, deployer);
+
         // Freeze the metadata
         transfer::public_freeze_object(metadata);
+    }
+
+    /// Create M Token global and treasury cap separately for NTT integration
+    /// This is used instead of the standard init flow when integrating with NTT
+    public fun create_global_and_treasury<CoinType: drop>(
+        witness: CoinType,
+        decimals: u8,
+        symbol: vector<u8>,
+        name: vector<u8>,
+        description: vector<u8>,
+        icon_url: option::Option<sui::url::Url>,
+        ctx: &mut TxContext
+    ): (MTokenGlobal, TreasuryCap<CoinType>) {
+        let (treasury_cap, metadata) = coin::create_currency(
+            witness, decimals, symbol, name, description, icon_url, ctx
+        );
+
+        // Freeze the metadata to make it immutable
+        transfer::public_freeze_object(metadata);
+
+        let global = MTokenGlobal {
+            id: object::new(ctx),
+            indexing: continuous_indexing::new(ctx),
+            portal: @0x0, // Will be set by NTT setup
+            registrar: @0x0, // Will be set by NTT setup
+            total_non_earning_supply: 0,
+            principal_of_total_earning_supply: 0,
+            total_earning_supply: 0,
+            balances: table::new(ctx),
+            approved_earners: table::new(ctx),
+        };
+
+        (global, treasury_cap)
+    }
+
+    /// Create portal capability for NTT integration
+    public fun create_portal_cap(ctx: &mut TxContext): PortalCap {
+        PortalCap { id: object::new(ctx) }
     }
 
     // ============ Portal Functions ============
 
     /// Mint tokens with index update (requires Portal capability)
-    public fun mint(
+    public fun mint<CoinType>(
         global: &mut MTokenGlobal,
+        treasury_cap: &mut TreasuryCap<CoinType>,
         _cap: &PortalCap,
         recipient: address,
         amount: u256,
@@ -199,12 +238,13 @@ module portal::m_token {
         );
 
         // Then mint tokens
-        mint_no_index(global , _cap, recipient, amount, ctx);
+        mint_no_index<CoinType>(global, treasury_cap, _cap, recipient, amount, ctx);
     }
 
     /// Mint tokens without index update (requires Portal capability)
-    public fun mint_no_index(
+    public fun mint_no_index<CoinType>(
         global: &mut MTokenGlobal,
+        treasury_cap: &mut TreasuryCap<CoinType>,
         _cap: &PortalCap,
         recipient: address,
         amount: u256,
@@ -267,7 +307,7 @@ module portal::m_token {
             };
 
         // Mint actual coins and transfer to recipient
-        let coin = coin::mint(&mut global.treasury_cap, (actual_mint_amount as u64), ctx);
+        let coin = coin::mint(treasury_cap, (actual_mint_amount as u64), ctx);
         transfer::public_transfer(coin, recipient);
 
         // Emit event for actual minted amount
@@ -277,10 +317,11 @@ module portal::m_token {
     // TODO: Inspect whether or not to burn `coin_to_burn` or a rounded DOWN value (for earners)
 
     /// Burn tokens from caller (requires Portal capability)
-    public fun burn(
+    public fun burn<CoinType>(
         global: &mut MTokenGlobal,
+        treasury_cap: &mut TreasuryCap<CoinType>,
         _cap: &PortalCap,
-        coin_to_burn: Coin<M_TOKEN>,
+        coin_to_burn: Coin<CoinType>,
         ctx: &mut TxContext
     ) {
         let sender = tx_context::sender(ctx);
@@ -313,7 +354,7 @@ module portal::m_token {
         };
 
         // Burn the actual coin
-        coin::burn(&mut global.treasury_cap, coin_to_burn);
+        coin::burn(treasury_cap, coin_to_burn);
 
         // Emit event
         event::emit(Burn { account: sender, amount });
@@ -479,15 +520,8 @@ module portal::m_token {
         recipient: address,
         ctx: &mut TxContext
     ) {
-        let yield_coin = claim_yield_internal(global, recipient, ctx);
-        
-        // Transfer to recipient if yield was generated
-        if (coin::value(&yield_coin) > 0) {
-            transfer::public_transfer(yield_coin, recipient);
-        } else {
-            // Destroy zero-value coin
-            coin::destroy_zero(yield_coin);
-        };
+        // NOTE: This function is deprecated for NTT usage - treasury_cap now external
+        abort 999 // Deprecated - use NTT functions instead
     }
     
     /// Claim accrued yield for sender and return coin for joining
@@ -496,11 +530,8 @@ module portal::m_token {
         global: &mut MTokenGlobal,
         ctx: &mut TxContext
     ): Coin<M_TOKEN> {
-        let sender = tx_context::sender(ctx);
-        let yield_coin = claim_yield_internal(global, sender, ctx);
-        
-        // Return the yield coin to be joined by the caller
-        yield_coin
+        // NOTE: This function is deprecated for NTT usage - treasury_cap now external
+        abort 999 // Deprecated - use NTT functions instead
     }
     
     /// Claim accrued yield for earning account (legacy function - claims for self)
@@ -509,17 +540,18 @@ module portal::m_token {
         global: &mut MTokenGlobal, 
         ctx: &mut TxContext
     ) {
-        let sender = tx_context::sender(ctx);
-        claim_yield_for(global, sender, ctx);
+        // NOTE: This function is deprecated for NTT usage - treasury_cap now external
+        abort 999 // Deprecated - use NTT functions instead
     }
 
     /// Internal function that performs the actual yield claiming logic
     /// Returns a coin with the yield amount that can be handled by the caller
-    fun claim_yield_internal(
+    fun claim_yield_internal<CoinType>(
         global: &mut MTokenGlobal,
-        account: address, 
+        treasury_cap: &mut TreasuryCap<CoinType>,
+        account: address,
         ctx: &mut TxContext
-    ): Coin<M_TOKEN> {
+    ): Coin<CoinType> {
         // Check account exists and is earning
         assert!(table::contains(&global.balances, account), EAccountNotFound);
         
@@ -556,7 +588,7 @@ module portal::m_token {
         global.total_earning_supply = global.total_earning_supply + yield_amount;
         
         // Mint yield coins
-        let yield_coin = coin::mint(&mut global.treasury_cap, (yield_amount as u64), ctx);
+        let yield_coin = coin::mint(treasury_cap, (yield_amount as u64), ctx);
         
         // Emit claim event
         event::emit(ClaimedYield { 
