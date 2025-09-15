@@ -2,7 +2,7 @@ import { SuiClient } from "@mysten/sui/client";
 import { isValidSuiAddress } from "@mysten/sui/utils";
 import { bcs, fromBase64 } from "@mysten/bcs";
 import { NATIVE_TOKEN_IDENTIFIERS } from "./constants.js";
-import { InboxItemNative } from "./bcs-types.js";
+import { InboxItemNative } from "./bcsTypes.js";
 
 // TypeScript types matching the Move structs
 export interface SuiMoveObject {

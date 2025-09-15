@@ -26,7 +26,7 @@ const config: Config = {
   testTimeout: 30000,
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
-    '^@wormhole-foundation/sdk-definitions-ntt$': '<rootDir>/__tests__/mock-ntt-definitions.ts',
+    '^@wormhole-foundation/sdk-definitions-ntt$': '<rootDir>/__tests__/mockNttDefinitions.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1'
   }
 };
