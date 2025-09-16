@@ -14,6 +14,10 @@ module ntt::state {
     use ntt_common::native_token_transfer::NativeTokenTransfer;
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
 
+    // Portal imports for M Token integration
+    use portal::earner::{EarnerGlobal, EarnerCap};
+    use portal::registrar::{RegistrarGlobal, PortalCap as RegistrarPortalCap};
+
     #[error]
     const EZeroThreshold: vector<u8> =
         b"Threshold cannot be zero";
@@ -49,6 +53,12 @@ module ntt::state {
         // for off-chain discoverability
         admin_cap_id: ID,
         upgrade_cap_id: ID,
+
+        // M Token extensions (owned objects)
+        earner_global: Option<EarnerGlobal>,
+        registrar_global: Option<RegistrarGlobal>,
+        earner_cap: Option<EarnerCap>,
+        registrar_cap: Option<RegistrarPortalCap>,
     }
 
     public(package) fun new<CoinType>(
@@ -81,6 +91,12 @@ module ntt::state {
             version: 0,
             admin_cap_id: admin_cap.id.to_inner(),
             upgrade_cap_id,
+
+            // Initialize M Token fields as None
+            earner_global: option::none(),
+            registrar_global: option::none(),
+            earner_cap: option::none(),
+            registrar_cap: option::none(),
         };
 
         (state, admin_cap)
@@ -361,5 +377,150 @@ module ntt::state {
         if (enabled_count > 0) {
             assert!(threshold > 0, EZeroThreshold);
         }
+    }
+
+    // ============ M Token State Management Functions ============
+
+    /// Check if this is an M Token NTT
+    public fun has_m_token_globals<T>(state: &State<T>): bool {
+        option::is_some(&state.earner_global)
+    }
+
+    /// Set M Token globals (called during setup)
+    public(package) fun set_m_token_globals<T>(
+        state: &mut State<T>,
+        earner_global: EarnerGlobal,
+        registrar_global: RegistrarGlobal,
+        earner_cap: EarnerCap,
+        registrar_cap: RegistrarPortalCap,
+    ) {
+        option::fill(&mut state.earner_global, earner_global);
+        option::fill(&mut state.registrar_global, registrar_global);
+        option::fill(&mut state.earner_cap, earner_cap);
+        option::fill(&mut state.registrar_cap, registrar_cap);
+    }
+
+    /// Accessor functions for internal use
+    public(package) fun borrow_earner_global<T>(state: &State<T>): &EarnerGlobal {
+        option::borrow(&state.earner_global)
+    }
+
+    public(package) fun borrow_earner_global_mut<T>(state: &mut State<T>): &mut EarnerGlobal {
+        option::borrow_mut(&mut state.earner_global)
+    }
+
+    public(package) fun borrow_registrar_global_mut<T>(state: &mut State<T>): &mut RegistrarGlobal {
+        option::borrow_mut(&mut state.registrar_global)
+    }
+
+    public(package) fun borrow_earner_cap<T>(state: &State<T>): &EarnerCap {
+        option::borrow(&state.earner_cap)
+    }
+
+    public(package) fun borrow_registrar_cap<T>(state: &State<T>): &RegistrarPortalCap {
+        option::borrow(&state.registrar_cap)
+    }
+
+    // ============ M Token Atomic Operations ============
+    // These functions perform operations that require multiple borrows atomically
+
+    /// Update M Token index atomically
+    public(package) fun update_m_token_index<T>(
+        state: &mut State<T>,
+        index: u128,
+        ctx: &mut TxContext
+    ) {
+        let earner_global = option::borrow_mut(&mut state.earner_global);
+        let earner_cap = option::borrow(&state.earner_cap);
+
+        portal::earner::update_index(earner_global, earner_cap, index, ctx);
+    }
+
+    /// Set registrar key atomically
+    public(package) fun set_registrar_key<T>(
+        state: &mut State<T>,
+        key: vector<u8>,
+        value: vector<u8>
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::set_key(registrar_global, registrar_cap, key, value);
+    }
+
+    /// Add to registrar list atomically
+    public(package) fun add_to_registrar_list<T>(
+        state: &mut State<T>,
+        list_name: vector<u8>,
+        account: address
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::add_to_list(registrar_global, registrar_cap, list_name, account);
+    }
+
+    /// Remove from registrar list atomically
+    public(package) fun remove_from_registrar_list<T>(
+        state: &mut State<T>,
+        list_name: vector<u8>,
+        account: address
+    ) {
+        let registrar_global = option::borrow_mut(&mut state.registrar_global);
+        let registrar_cap = option::borrow(&state.registrar_cap);
+
+        portal::registrar::remove_from_list(registrar_global, registrar_cap, list_name, account);
+    }
+
+    /// Get current M Token index
+    public(package) fun get_m_token_current_index<T>(state: &State<T>): u128 {
+        let earner_global = option::borrow(&state.earner_global);
+        portal::earner::current_index(earner_global)
+    }
+
+    /// Mint M Tokens with index update atomically
+    public(package) fun mint_m_token_with_index<T>(
+        state: &mut State<T>,
+        recipient: address,
+        amount: u256,
+        index: u128,
+        ctx: &mut TxContext
+    ) {
+        // Get caps first (immutable borrow)
+        let earner_cap = option::borrow(&state.earner_cap);
+
+        // Then get mutable references
+        let earner_global = option::borrow_mut(&mut state.earner_global);
+        let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
+
+        // Update the index and add balance tracking
+        portal::earner::update_index(earner_global, earner_cap, index, ctx);
+        portal::earner::add_account_balance(earner_global, earner_cap, recipient, amount, ctx);
+
+        // Finally mint the actual coins
+        let coins = sui::coin::mint(treasury_cap, (amount as u64), ctx);
+        transfer::public_transfer(coins, recipient);
+    }
+
+    /// Mint M Tokens without index update atomically
+    public(package) fun mint_m_token_no_index<T>(
+        state: &mut State<T>,
+        recipient: address,
+        amount: u256,
+        ctx: &mut TxContext
+    ) {
+        // Get caps first (immutable borrow)
+        let earner_cap = option::borrow(&state.earner_cap);
+
+        // Then get mutable references
+        let earner_global = option::borrow_mut(&mut state.earner_global);
+        let treasury_cap = option::borrow_mut(&mut state.treasury_cap);
+
+        // Add balance tracking (no index update)
+        portal::earner::add_account_balance(earner_global, earner_cap, recipient, amount, ctx);
+
+        // Finally mint the actual coins
+        let coins = sui::coin::mint(treasury_cap, (amount as u64), ctx);
+        transfer::public_transfer(coins, recipient);
     }
 }
