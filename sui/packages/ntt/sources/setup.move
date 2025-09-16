@@ -8,9 +8,7 @@ module ntt::setup {
     use ntt::state;
     use ntt::mode::{Mode, Self};
 
-    // M Token imports
-    use portal::earner::{EarnerGlobal, EarnerCap};
-    use portal::registrar::{RegistrarGlobal, PortalCap as RegistrarPortalCap};
+    // M Token imports - simplified to use ID references only
 
     /// Capability created at `init`, which will be destroyed once
     /// `complete` is called. This ensures only the deployer can
@@ -96,23 +94,22 @@ module ntt::setup {
 
     // ============ M Token Setup Functions ============
 
-    /// Set M Token portal objects on existing NTT State
-    /// This transfers ownership of M Token globals and capabilities to NTT State
+    /// Set M Token portal object IDs in NTT State
     /// The portal objects should be created when publishing the portal package
     public fun set_m_token_portal_objects<CoinType>(
         state: &mut state::State<CoinType>,
-        earner_global: EarnerGlobal,
-        registrar_global: RegistrarGlobal,
-        earner_cap: EarnerCap,
-        registrar_cap: RegistrarPortalCap
+        earner_global_id: ID,
+        registrar_global_id: ID,
+        earner_cap_id: ID,
+        registrar_cap_id: ID
     ) {
-        // Transfer ownership of M Token globals to NTT state
+        // Store M Token object IDs in NTT state
         state::set_m_token_globals(
             state,
-            earner_global,
-            registrar_global,
-            earner_cap,
-            registrar_cap
+            earner_global_id,
+            registrar_global_id,
+            earner_cap_id,
+            registrar_cap_id
         );
     }
 }
