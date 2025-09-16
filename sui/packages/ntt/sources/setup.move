@@ -9,6 +9,7 @@ module ntt::setup {
     use ntt::mode::{Mode, Self};
 
     // M Token imports - simplified to use ID references only
+    use sui::object::ID;
 
     /// Capability created at `init`, which will be destroyed once
     /// `complete` is called. This ensures only the deployer can

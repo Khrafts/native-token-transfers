@@ -6,16 +6,15 @@ module ntt::ntt {
     use sui::coin::{Self, Coin, CoinMetadata};
     use sui::transfer;
     use ntt_common::trimmed_amount::{Self, TrimmedAmount};
-    use ntt::state::{Self, State};
+    use ntt::state::State;
     use ntt::outbox::{Self, OutboxKey};
     use ntt_common::native_token_transfer::{Self, NativeTokenTransfer};
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
     use ntt_common::validated_transceiver_message::ValidatedTransceiverMessage;
     use ntt::upgrades::VersionGated;
 
-    // Portal imports for payload processing only
-    use sui::object::ID;
-    use portal::payload_encoder;
+    // Direct M Token integration - embedded payload encoding
+    use sui::address;
 
     #[error]
     const ETransferExceedsRateLimit: vector<u8>
@@ -332,17 +331,17 @@ module ntt::ntt {
             return
         };
 
-        let payload_type = payload_encoder::get_payload_type(&payload);
+        let payload_type = get_payload_type(&payload);
 
-        if (payload_encoder::is_index_payload(&payload_type)) {
+        if (is_index_payload(&payload_type)) {
             // M0IT - Index Transfer (no token transfer)
             handle_index_transfer(state, payload, ctx);
             coin::destroy_zero(coins);
-        } else if (payload_encoder::is_key_payload(&payload_type)) {
+        } else if (is_key_payload(&payload_type)) {
             // M0KT - Key Transfer (no token transfer)
             handle_key_transfer(state, payload, ctx);
             coin::destroy_zero(coins);
-        } else if (payload_encoder::is_list_payload(&payload_type)) {
+        } else if (is_list_payload(&payload_type)) {
             // M0LU - List Update (no token transfer)
             handle_list_update(state, payload, ctx);
             coin::destroy_zero(coins);
@@ -358,7 +357,7 @@ module ntt::ntt {
         payload: vector<u8>,
         ctx: &mut TxContext
     ) {
-        let (index, _chain_id) = payload_encoder::decode_index_payload(payload);
+        let (index, _chain_id) = decode_index_payload(payload);
         update_m_token_index(state, index, ctx);
     }
 
@@ -368,7 +367,7 @@ module ntt::ntt {
         payload: vector<u8>,
         ctx: &mut TxContext
     ) {
-        let (key, value, _chain_id) = payload_encoder::decode_key_payload(payload);
+        let (key, value, _chain_id) = decode_key_payload(payload);
         set_registrar_key(state, key, value, ctx);
     }
 
@@ -378,7 +377,7 @@ module ntt::ntt {
         payload: vector<u8>,
         ctx: &mut TxContext
     ) {
-        let (list_name, account, add, _chain_id) = payload_encoder::decode_list_update_payload(payload);
+        let (list_name, account, add, _chain_id) = decode_list_update_payload(payload);
         if (add) {
             add_to_registrar_list(state, list_name, account, ctx);
         } else {
@@ -394,56 +393,283 @@ module ntt::ntt {
         payload: vector<u8>,
         ctx: &mut TxContext
     ) {
-        let (index, _dest_token) = payload_encoder::decode_m_additional_payload(&payload);
+        let (index, _dest_token) = decode_m_additional_payload(&payload);
         let amount = coin::value(&coins);
         coin::destroy_zero(coins);
         mint_m_token_with_index(state, recipient, amount, index, ctx);
+      }
+
+    // ============ Embedded Payload Encoding Functions ============
+
+    // Payload type constants
+    const TOKEN_TYPE: u8 = 0;
+    const INDEX_TYPE: u8 = 1;
+    const KEY_TYPE: u8 = 2;
+    const LIST_TYPE: u8 = 3;
+
+    // Payload prefixes (matching Solidity implementation)
+    const INDEX_TRANSFER_PREFIX: vector<u8> = b"M0IT"; // M0 Index Transfer
+    const KEY_TRANSFER_PREFIX: vector<u8> = b"M0KT";   // M0 Key Transfer
+    const LIST_UPDATE_PREFIX: vector<u8> = b"M0LU";   // M0 List Update
+    const NTT_PREFIX: vector<u8> = b"NTT\x00";        // Standard NTT prefix
+
+    const PAYLOAD_PREFIX_LENGTH: u64 = 4;
+    const E_INVALID_PAYLOAD_LENGTH: u64 = 1;
+    const E_INVALID_PAYLOAD_PREFIX: u64 = 2;
+
+    /// Payload type enumeration
+    public struct PayloadType has store, copy, drop {
+        value: u8
+    }
+
+    // ================ Payload Type Functions ================
+
+    fun token_payload_type(): PayloadType {
+        PayloadType { value: TOKEN_TYPE }
+    }
+
+    fun index_payload_type(): PayloadType {
+        PayloadType { value: INDEX_TYPE }
+    }
+
+    fun key_payload_type(): PayloadType {
+        PayloadType { value: KEY_TYPE }
+    }
+
+    fun list_payload_type(): PayloadType {
+        PayloadType { value: LIST_TYPE }
+    }
+
+    fun is_token_payload(payload_type: &PayloadType): bool {
+        payload_type.value == TOKEN_TYPE
+    }
+
+    fun is_index_payload(payload_type: &PayloadType): bool {
+        payload_type.value == INDEX_TYPE
+    }
+
+    fun is_key_payload(payload_type: &PayloadType): bool {
+        payload_type.value == KEY_TYPE
+    }
+
+    fun is_list_payload(payload_type: &PayloadType): bool {
+        payload_type.value == LIST_TYPE
+    }
+
+    // ================ Payload Type Detection ================
+
+    /// Determine payload type from payload bytes
+    fun get_payload_type(payload: &vector<u8>): PayloadType {
+        assert!(vector::length(payload) >= PAYLOAD_PREFIX_LENGTH, E_INVALID_PAYLOAD_LENGTH);
+
+        let prefix = extract_prefix(payload);
+
+        if (prefix == NTT_PREFIX) {
+            token_payload_type()
+        } else if (prefix == INDEX_TRANSFER_PREFIX) {
+            index_payload_type()
+        } else if (prefix == KEY_TRANSFER_PREFIX) {
+            key_payload_type()
+        } else if (prefix == LIST_UPDATE_PREFIX) {
+            list_payload_type()
+        } else {
+            abort E_INVALID_PAYLOAD_PREFIX
+        }
+    }
+
+    fun extract_prefix(payload: &vector<u8>): vector<u8> {
+        let mut prefix = vector::empty<u8>();
+        let mut i = 0;
+        while (i < PAYLOAD_PREFIX_LENGTH) {
+            vector::push_back(&mut prefix, *vector::borrow(payload, i));
+            i = i + 1;
+        };
+        prefix
+    }
+
+    // ================ M Token Additional Payload ================
+
+    /// Decode M Token additional payload
+    fun decode_m_additional_payload(payload: &vector<u8>): (u128, vector<u8>) {
+        assert!(vector::length(payload) >= 8 + 32, E_INVALID_PAYLOAD_LENGTH);
+
+        let mut offset = 0;
+        let (index_u64, new_offset) = read_u64(payload, offset);
+        offset = new_offset;
+
+        let destination_token = read_bytes(payload, offset, 32);
+
+        ((index_u64 as u128), destination_token)
+    }
+
+    // ================ Index Payload ================
+
+    /// Decode M Token index payload
+    fun decode_index_payload(payload: vector<u8>): (u128, u16) {
+        assert!(vector::length(&payload) >= PAYLOAD_PREFIX_LENGTH + 8 + 2, E_INVALID_PAYLOAD_LENGTH);
+
+        let mut offset = PAYLOAD_PREFIX_LENGTH;
+        let (index_u64, new_offset) = read_u64(&payload, offset);
+        offset = new_offset;
+
+        let (destination_chain_id, _) = read_u16(&payload, offset);
+
+        ((index_u64 as u128), destination_chain_id)
+    }
+
+    // ================ Key Payload ================
+
+    /// Decode Registrar key payload
+    fun decode_key_payload(payload: vector<u8>): (vector<u8>, vector<u8>, u16) {
+        assert!(vector::length(&payload) >= PAYLOAD_PREFIX_LENGTH + 32 + 32 + 2, E_INVALID_PAYLOAD_LENGTH);
+
+        let mut offset = PAYLOAD_PREFIX_LENGTH;
+
+        let key = read_bytes(&payload, offset, 32);
+        offset = offset + 32;
+
+        let value = read_bytes(&payload, offset, 32);
+        offset = offset + 32;
+
+        let (destination_chain_id, _) = read_u16(&payload, offset);
+
+        (key, value, destination_chain_id)
+    }
+
+    // ================ List Update Payload ================
+
+    /// Decode Registrar list update payload
+    fun decode_list_update_payload(payload: vector<u8>): (vector<u8>, address, bool, u16) {
+        assert!(vector::length(&payload) >= PAYLOAD_PREFIX_LENGTH + 32 + 32 + 1 + 2, E_INVALID_PAYLOAD_LENGTH);
+
+        let mut offset = PAYLOAD_PREFIX_LENGTH;
+
+        let list_name = read_bytes(&payload, offset, 32);
+        offset = offset + 32;
+
+        let account_bytes = read_bytes(&payload, offset, 32);
+        let account = bytes_to_address(account_bytes);
+        offset = offset + 32;
+
+        let add = *vector::borrow(&payload, offset) == 1;
+        offset = offset + 1;
+
+        let (destination_chain_id, _) = read_u16(&payload, offset);
+
+        (list_name, account, add, destination_chain_id)
+    }
+
+    // ================ Helper Functions ================
+
+    fun read_u64(payload: &vector<u8>, offset: u64): (u64, u64) {
+        let bytes = read_bytes(payload, offset, 8);
+        (bytes_to_u64(bytes), offset + 8)
+    }
+
+    fun read_u16(payload: &vector<u8>, offset: u64): (u16, u64) {
+        let bytes = read_bytes(payload, offset, 2);
+        (bytes_to_u16(bytes), offset + 2)
+    }
+
+    fun read_bytes(payload: &vector<u8>, offset: u64, length: u64): vector<u8> {
+        let mut result = vector::empty<u8>();
+        let mut i = 0;
+        while (i < length) {
+            vector::push_back(&mut result, *vector::borrow(payload, offset + i));
+            i = i + 1;
+        };
+        result
+    }
+
+    // Conversion functions
+    fun bytes_to_u64(bytes: vector<u8>): u64 {
+        assert!(vector::length(&bytes) == 8, E_INVALID_PAYLOAD_LENGTH);
+
+        let mut result = 0u64;
+        let mut i = 0;
+        while (i < 8) {
+            let byte_val = (*vector::borrow(&bytes, i) as u64);
+            result = (result << 8) | byte_val;
+            i = i + 1;
+        };
+        result
+    }
+
+    fun bytes_to_u16(bytes: vector<u8>): u16 {
+        assert!(vector::length(&bytes) == 2, E_INVALID_PAYLOAD_LENGTH);
+
+        let high = (*vector::borrow(&bytes, 0) as u16);
+        let low = (*vector::borrow(&bytes, 1) as u16);
+        (high << 8) | low
+    }
+
+    fun bytes_to_address(bytes: vector<u8>): address {
+        assert!(vector::length(&bytes) == 32, E_INVALID_PAYLOAD_LENGTH);
+        address::from_bytes(bytes)
     }
 
     // ============ M Token System Integration Functions ============
 
-    /// Update M Token index - placeholder implementation
+    /// Update M Token index - simplified implementation
     fun update_m_token_index<CoinType>(
         _state: &mut State<CoinType>,
         _index: u128,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement proper portal object access
-        // For now, this is a placeholder that will be implemented
-        // when the proper portal integration mechanism is determined
+        // TODO: Implement shared object access pattern for earner global
+        // For Phase 3, we'll acknowledge the update but defer implementation
+        // This maintains the structure while avoiding shared object complexity
+
+        // Implementation will be added in Phase 4 when earner integration is completed
+        // For now, this maintains the payload handling flow
     }
 
-    /// Set registrar key - placeholder implementation
+    /// Set registrar key - simplified implementation
     fun set_registrar_key<CoinType>(
         _state: &mut State<CoinType>,
         _key: vector<u8>,
         _value: vector<u8>,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement proper portal object access
+        // TODO: Implement shared object access pattern for registrar
+        // For Phase 3, we'll acknowledge the key set but defer implementation
+        // This maintains the structure while avoiding shared object complexity
+
+        // Implementation will be added in Phase 4 when registrar integration is completed
+        // For now, this maintains the payload handling flow
     }
 
-    /// Add to registrar list - placeholder implementation
+    /// Add to registrar list - simplified implementation
     fun add_to_registrar_list<CoinType>(
         _state: &mut State<CoinType>,
         _list_name: vector<u8>,
         _account: address,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement proper portal object access
+        // TODO: Implement shared object access pattern for registrar
+        // For Phase 3, we'll acknowledge the list addition but defer implementation
+        // This maintains the structure while avoiding shared object complexity
+
+        // Implementation will be added in Phase 4 when registrar integration is completed
+        // For now, this maintains the payload handling flow
     }
 
-    /// Remove from registrar list - placeholder implementation
+    /// Remove from registrar list - simplified implementation
     fun remove_from_registrar_list<CoinType>(
         _state: &mut State<CoinType>,
         _list_name: vector<u8>,
         _account: address,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement proper portal object access
+        // TODO: Implement shared object access pattern for registrar
+        // For Phase 3, we'll acknowledge the list removal but defer implementation
+        // This maintains the structure while avoiding shared object complexity
+
+        // Implementation will be added in Phase 4 when registrar integration is completed
+        // For now, this maintains the payload handling flow
     }
 
-    /// Mint M Tokens with index update - placeholder implementation
+    /// Mint M Tokens with index update - simplified implementation
     fun mint_m_token_with_index<CoinType>(
         state: &mut State<CoinType>,
         recipient: address,
@@ -451,10 +677,15 @@ module ntt::ntt {
         _index: u128,
         ctx: &mut TxContext
     ) {
-        // TODO: Implement proper portal object access for index update
-        // For now, just mint the coins
+        // TODO: Implement earner integration for balance tracking
+        // For Phase 3, we'll mint coins directly without earner tracking
+        // This maintains the M Token functionality while deferring complexity
+
         let coins = coin::mint(state.borrow_treasury_cap_mut(), amount, ctx);
         transfer::public_transfer(coins, recipient);
+
+        // Earner integration will be added in Phase 4
+        // This preserves the M Token minting flow
     }
 
 }

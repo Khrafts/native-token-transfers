@@ -414,9 +414,4 @@ module ntt::state {
     public(package) fun get_registrar_cap_id<T>(state: &State<T>): Option<ID> {
         state.registrar_cap_id
     }
-
-    /// Get the state object ID for dynamic field access
-    public(package) fun borrow_id<T>(state: &State<T>): &UID {
-        &state.id
-    }
 }
