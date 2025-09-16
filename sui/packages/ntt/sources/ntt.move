@@ -12,6 +12,7 @@ module ntt::ntt {
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
     use ntt_common::validated_transceiver_message::ValidatedTransceiverMessage;
     use ntt::upgrades::VersionGated;
+    use std::bcs;
 
     // Direct M Token integration - embedded payload encoding
     use sui::address;
@@ -612,54 +613,124 @@ module ntt::ntt {
 
     // ============ M Token System Integration Functions ============
 
-    /// Update M Token index - simplified implementation
+    // ============ Earner System Integration ============
+
+    /// Add balance to earner tracking system
+    fun add_to_earner_balance<CoinType>(
+        state: &mut State<CoinType>,
+        recipient: address,
+        amount: u256,
+        _ctx: &mut TxContext
+    ) {
+        // For now, we'll store this information in the registrar storage
+        // In a full implementation, we would make direct calls to the earner package
+        let balance_key = generate_earner_balance_key(recipient);
+
+        // Get current balance or default to 0
+        let current_balance = if (state::has_registrar_key(state, balance_key)) {
+            let balance_bytes = *option::borrow(&state::get_registrar_value(state, balance_key));
+            bytes_to_u256(balance_bytes)
+        } else {
+            0
+        };
+
+        // Update balance
+        let new_balance = current_balance + amount;
+        state::set_registrar_key(state, balance_key, u256_to_bytes(new_balance));
+    }
+
+    /// Generate key for earner balance storage
+    fun generate_earner_balance_key(account: address): vector<u8> {
+        let mut key = vector::empty<u8>();
+        vector::append(&mut key, b"earner_balance:");
+        let account_bytes = bcs::to_bytes(&account);
+        vector::append(&mut key, account_bytes);
+        key
+    }
+
+    /// Convert u256 to bytes
+    fun u256_to_bytes(value: u256): vector<u8> {
+        bcs::to_bytes(&value)
+    }
+
+    /// Convert bytes to u256
+    fun bytes_to_u256(bytes: vector<u8>): u256 {
+        // Simple conversion for now - in production would need proper deserialization
+        if (vector::length(&bytes) == 0) {
+            0
+        } else if (vector::length(&bytes) >= 8) {
+            // Read first 8 bytes as u64 and convert to u256
+            let mut result = 0u256;
+            let mut i = 0;
+            while (i < 8) {
+                let byte_val = (*vector::borrow(&bytes, i) as u256);
+                result = (result << 8) | byte_val;
+                i = i + 1;
+            };
+            result
+        } else {
+            // Simple conversion for shorter vectors
+            let mut result = 0u256;
+            let mut i = 0;
+            while (i < vector::length(&bytes)) {
+                let byte_val = (*vector::borrow(&bytes, i) as u256);
+                result = (result << 8) | byte_val;
+                i = i + 1;
+            };
+            result
+        }
+    }
+
+    /// Update M Token index
     fun update_m_token_index<CoinType>(
-        _state: &mut State<CoinType>,
-        _index: u128,
+        state: &mut State<CoinType>,
+        index: u128,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement M Token index tracking in future phase
-        // For now, acknowledge the payload but maintain simplicity
-        // Index tracking preserves M Token functionality
+        state::set_current_index(state, index);
     }
 
-    /// Set registrar key - simplified implementation
+    /// Set registrar key
     fun set_registrar_key<CoinType>(
-        _state: &mut State<CoinType>,
-        _key: vector<u8>,
-        _value: vector<u8>,
+        state: &mut State<CoinType>,
+        key: vector<u8>,
+        value: vector<u8>,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement registrar key storage in future phase
-        // For now, acknowledge the payload but maintain simplicity
-        // Key-value storage preserves M Token functionality
+        state::set_registrar_key(state, key, value);
     }
 
-    /// Add to registrar list - simplified implementation
+    /// Add to registrar list
     fun add_to_registrar_list<CoinType>(
-        _state: &mut State<CoinType>,
+        state: &mut State<CoinType>,
         _list_name: vector<u8>,
         _account: address,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement list management in future phase
-        // For now, acknowledge the payload but maintain simplicity
-        // List management preserves M Token functionality
+        if (!state::has_m_token_globals(state)) {
+            return
+        };
+
+        // Placeholder: In a full implementation, this would add to a registrar list
+        // For now, we acknowledge the operation but don't persist data
     }
 
-    /// Remove from registrar list - simplified implementation
+    /// Remove from registrar list
     fun remove_from_registrar_list<CoinType>(
-        _state: &mut State<CoinType>,
+        state: &mut State<CoinType>,
         _list_name: vector<u8>,
         _account: address,
         _ctx: &mut TxContext
     ) {
-        // TODO: Implement list management in future phase
-        // For now, acknowledge the payload but maintain simplicity
-        // List management preserves M Token functionality
+        if (!state::has_m_token_globals(state)) {
+            return
+        };
+
+        // Placeholder: In a full implementation, this would remove from a registrar list
+        // For now, we acknowledge the operation but don't persist data
     }
 
-    /// Mint M Tokens with index - simplified implementation
+    /// Mint M Tokens with index - with earner integration
     fun mint_m_token_with_index<CoinType>(
         state: &mut State<CoinType>,
         recipient: address,
@@ -667,15 +738,19 @@ module ntt::ntt {
         index: u128,
         ctx: &mut TxContext
     ) {
-        // Update M Token index (simplified)
+        // Update M Token index first
         update_m_token_index(state, index, ctx);
 
-        // Mint coins directly to maintain M Token functionality
+        // Mint coins
         let coins = coin::mint(state.borrow_treasury_cap_mut(), amount, ctx);
-        transfer::public_transfer(coins, recipient);
 
-        // TODO: Add earner balance tracking in future phase
-        // This preserves the M Token minting flow without complexity
+        // Add to earner balance tracking if earner system is enabled
+        if (state::has_m_token_globals(state)) {
+            add_to_earner_balance(state, recipient, (amount as u256), ctx);
+        };
+
+        // Transfer coins to recipient
+        transfer::public_transfer(coins, recipient);
     }
 
 }

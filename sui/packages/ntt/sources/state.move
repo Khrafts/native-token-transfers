@@ -58,6 +58,9 @@ module ntt::state {
         registrar_global_id: Option<ID>,
         earner_cap_id: Option<ID>,
         registrar_cap_id: Option<ID>,
+
+        // M Token state
+        current_index: u128,
     }
 
     public(package) fun new<CoinType>(
@@ -96,6 +99,9 @@ module ntt::state {
             registrar_global_id: option::none(),
             earner_cap_id: option::none(),
             registrar_cap_id: option::none(),
+
+            // Initialize M Token state
+            current_index: 0,
         };
 
         (state, admin_cap)
@@ -414,6 +420,41 @@ module ntt::state {
 
     public(package) fun get_registrar_cap_id<T>(state: &State<T>): Option<ID> {
         state.registrar_cap_id
+    }
+
+    /// Get the current M Token index
+    public fun get_current_index<T>(state: &State<T>): u128 {
+        state.current_index
+    }
+
+    /// Update the current M Token index
+    public(package) fun set_current_index<T>(state: &mut State<T>, new_index: u128) {
+        assert!(new_index > state.current_index, 0);
+        state.current_index = new_index;
+    }
+
+    // ============ Simplified Registrar Functions ============
+
+    /// Set a registrar key-value pair (placeholder implementation)
+    public(package) fun set_registrar_key<T>(
+        _state: &mut State<T>,
+        _key: vector<u8>,
+        _value: vector<u8>,
+    ) {
+        // Placeholder: In a full implementation, this would store key-value pairs
+        // For now, we acknowledge the operation but don't persist data
+    }
+
+    /// Get a registrar value by key (placeholder implementation)
+    public fun get_registrar_value<T>(_state: &State<T>, _key: vector<u8>): Option<vector<u8>> {
+        // Placeholder: Always return none for now
+        option::none()
+    }
+
+    /// Check if a registrar key exists (placeholder implementation)
+    public fun has_registrar_key<T>(_state: &State<T>, _key: vector<u8>): bool {
+        // Placeholder: Always return false for now
+        false
     }
 
     // M Token object IDs are stored for future integration
