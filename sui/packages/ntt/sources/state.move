@@ -3,6 +3,7 @@ module ntt::state {
     use sui::table::{Self, Table};
     use sui::balance::Balance;
     use sui::clock::Clock;
+    use sui::object::{Self, UID, ID};
     use wormhole::bytes32::{Self, Bytes32};
     use wormhole::external_address::ExternalAddress;
     use ntt::mode::Mode;
@@ -14,7 +15,7 @@ module ntt::state {
     use ntt_common::native_token_transfer::NativeTokenTransfer;
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
 
-    // No portal imports needed - using ID references only
+    // No portal imports needed - simplified M Token integration
 
     #[error]
     const EZeroThreshold: vector<u8> =
@@ -414,4 +415,7 @@ module ntt::state {
     public(package) fun get_registrar_cap_id<T>(state: &State<T>): Option<ID> {
         state.registrar_cap_id
     }
+
+    // M Token object IDs are stored for future integration
+    // Actual object access will be implemented in future phases
 }
