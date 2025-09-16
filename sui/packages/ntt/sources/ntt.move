@@ -4,15 +4,18 @@ module ntt::ntt {
     use sui::balance::Balance;
     use sui::clock::Clock;
     use sui::coin::{Self, Coin, CoinMetadata};
+    use sui::transfer;
     use ntt_common::trimmed_amount::{Self, TrimmedAmount};
-    use ntt::state::State;
+    use ntt::state::{Self, State};
     use ntt::outbox::{Self, OutboxKey};
     use ntt_common::native_token_transfer::{Self, NativeTokenTransfer};
     use ntt_common::ntt_manager_message::{Self, NttManagerMessage};
     use ntt_common::validated_transceiver_message::ValidatedTransceiverMessage;
     use ntt::upgrades::VersionGated;
 
-    // No portal imports - handled directly in release function
+    // Portal imports for payload processing only
+    use sui::object::ID;
+    use portal::payload_encoder;
 
     #[error]
     const ETransferExceedsRateLimit: vector<u8>
@@ -313,19 +316,145 @@ module ntt::ntt {
         }
     }
 
-    // ============ Simplified M Token Payload Handling ============
+    // ============ M Token Payload Handling ============
 
     /// Handle M Token payloads directly in NTT as intended by original design
     fun handle_m_token_payload<CoinType>(
-        _state: &mut State<CoinType>,
+        state: &mut State<CoinType>,
         recipient: address,
         coins: Coin<CoinType>,
-        _payload: vector<u8>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        if (vector::length(&payload) < 4) {
+            // Invalid payload, transfer coins normally
+            transfer::public_transfer(coins, recipient);
+            return
+        };
+
+        let payload_type = payload_encoder::get_payload_type(&payload);
+
+        if (payload_encoder::is_index_payload(&payload_type)) {
+            // M0IT - Index Transfer (no token transfer)
+            handle_index_transfer(state, payload, ctx);
+            coin::destroy_zero(coins);
+        } else if (payload_encoder::is_key_payload(&payload_type)) {
+            // M0KT - Key Transfer (no token transfer)
+            handle_key_transfer(state, payload, ctx);
+            coin::destroy_zero(coins);
+        } else if (payload_encoder::is_list_payload(&payload_type)) {
+            // M0LU - List Update (no token transfer)
+            handle_list_update(state, payload, ctx);
+            coin::destroy_zero(coins);
+        } else {
+            // Regular M Token transfer with index
+            handle_token_transfer_with_index(state, recipient, coins, payload, ctx);
+        }
+    }
+
+    /// Handle M0IT - Index Transfer payload
+    fun handle_index_transfer<CoinType>(
+        state: &mut State<CoinType>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        let (index, _chain_id) = payload_encoder::decode_index_payload(payload);
+        update_m_token_index(state, index, ctx);
+    }
+
+    /// Handle M0KT - Key Transfer payload
+    fun handle_key_transfer<CoinType>(
+        state: &mut State<CoinType>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        let (key, value, _chain_id) = payload_encoder::decode_key_payload(payload);
+        set_registrar_key(state, key, value, ctx);
+    }
+
+    /// Handle M0LU - List Update payload
+    fun handle_list_update<CoinType>(
+        state: &mut State<CoinType>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        let (list_name, account, add, _chain_id) = payload_encoder::decode_list_update_payload(payload);
+        if (add) {
+            add_to_registrar_list(state, list_name, account, ctx);
+        } else {
+            remove_from_registrar_list(state, list_name, account, ctx);
+        };
+    }
+
+    /// Handle regular M Token transfer with index
+    fun handle_token_transfer_with_index<CoinType>(
+        state: &mut State<CoinType>,
+        recipient: address,
+        coins: Coin<CoinType>,
+        payload: vector<u8>,
+        ctx: &mut TxContext
+    ) {
+        let (index, _dest_token) = payload_encoder::decode_m_additional_payload(&payload);
+        let amount = coin::value(&coins);
+        coin::destroy_zero(coins);
+        mint_m_token_with_index(state, recipient, amount, index, ctx);
+    }
+
+    // ============ M Token System Integration Functions ============
+
+    /// Update M Token index - placeholder implementation
+    fun update_m_token_index<CoinType>(
+        _state: &mut State<CoinType>,
+        _index: u128,
         _ctx: &mut TxContext
     ) {
-        // For now, just transfer the coins normally
-        // TODO: Add proper M Token payload handling using portal objects via IDs
-        transfer::public_transfer(coins, recipient)
+        // TODO: Implement proper portal object access
+        // For now, this is a placeholder that will be implemented
+        // when the proper portal integration mechanism is determined
+    }
+
+    /// Set registrar key - placeholder implementation
+    fun set_registrar_key<CoinType>(
+        _state: &mut State<CoinType>,
+        _key: vector<u8>,
+        _value: vector<u8>,
+        _ctx: &mut TxContext
+    ) {
+        // TODO: Implement proper portal object access
+    }
+
+    /// Add to registrar list - placeholder implementation
+    fun add_to_registrar_list<CoinType>(
+        _state: &mut State<CoinType>,
+        _list_name: vector<u8>,
+        _account: address,
+        _ctx: &mut TxContext
+    ) {
+        // TODO: Implement proper portal object access
+    }
+
+    /// Remove from registrar list - placeholder implementation
+    fun remove_from_registrar_list<CoinType>(
+        _state: &mut State<CoinType>,
+        _list_name: vector<u8>,
+        _account: address,
+        _ctx: &mut TxContext
+    ) {
+        // TODO: Implement proper portal object access
+    }
+
+    /// Mint M Tokens with index update - placeholder implementation
+    fun mint_m_token_with_index<CoinType>(
+        state: &mut State<CoinType>,
+        recipient: address,
+        amount: u64,
+        _index: u128,
+        ctx: &mut TxContext
+    ) {
+        // TODO: Implement proper portal object access for index update
+        // For now, just mint the coins
+        let coins = coin::mint(state.borrow_treasury_cap_mut(), amount, ctx);
+        transfer::public_transfer(coins, recipient);
     }
 
 }

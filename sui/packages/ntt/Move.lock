@@ -2,12 +2,13 @@
 
 [move]
 version = 3
-manifest_digest = "60589AB241B5F2383854B86AC7D407E5521324A3FC0B004F6F9911E74D3F85E0"
-deps_digest = "52B406A7A21811BEF51751CF88DA0E76DAEFFEAC888D4F4060B1A72BBE7D8D35"
+manifest_digest = "E1D39E1B03EA0835BE68BBB41E6FF5D7B8A849F59E395702C5490FD1C6341868"
+deps_digest = "CAFAD8A7CF51067FB4358215BECB86BD100DD64E57C2AC8A7AE7D74B688F5965"
 dependencies = [
   { id = "Bridge", name = "Bridge" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "NttCommon", name = "NttCommon" },
+  { id = "Portal", name = "Portal" },
   { id = "Sui", name = "Sui" },
   { id = "SuiSystem", name = "SuiSystem" },
   { id = "Wormhole", name = "Wormhole" },
@@ -30,6 +31,18 @@ source = { git = "https://github.com/MystenLabs/sui.git", rev = "664b05b3b047c5b
 [[move.package]]
 id = "NttCommon"
 source = { local = "../ntt_common" }
+
+dependencies = [
+  { id = "Bridge", name = "Bridge" },
+  { id = "MoveStdlib", name = "MoveStdlib" },
+  { id = "Sui", name = "Sui" },
+  { id = "SuiSystem", name = "SuiSystem" },
+  { id = "Wormhole", name = "Wormhole" },
+]
+
+[[move.package]]
+id = "Portal"
+source = { local = "../portal" }
 
 dependencies = [
   { id = "Bridge", name = "Bridge" },

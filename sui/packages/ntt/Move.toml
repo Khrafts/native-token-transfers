@@ -11,9 +11,12 @@ subdir = "sui/wormhole"
 [dependencies.NttCommon]
 local = "../ntt_common"
 
+[dependencies.Portal]
+local = "../portal"
 
 [addresses]
 ntt = "0x0"
+portal = "0x0"
 
 [dev-dependencies]
 
